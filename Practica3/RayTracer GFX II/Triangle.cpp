@@ -106,7 +106,8 @@ bool Triangle::Intersect( const Ray &ray, HitGeom &hitgeom ) const
 		plane.C = N.z;
 		plane.D = d;
 
-		/*M.m [0][0] = A.x;
+		/*
+		M.m [0][0] = A.x;
 		M.m [0][1] = B.x;
 		M.m [0][2] = C.x;
 
@@ -116,7 +117,8 @@ bool Triangle::Intersect( const Ray &ray, HitGeom &hitgeom ) const
 
 		M.m [2][0] = A.z;
 		M.m [2][1] = A.z;
-		M.m [2][2] = A.z;*/
+		M.m [2][2] = A.z;
+		*/
 		
 		dist = plane.Intersect(ray);
 

@@ -158,42 +158,45 @@ int Raytracer::Cast( const Ray &ray, const Scene &scene, HitInfo &hitinfo, Objec
 Sample Raytracer::SampleProjectedHemisphere(const Vec3 &N) {
 
 	double s, t;
-	Vec3 st;
 	Sample sample;
-	double d = 1.0;
-	double cos_theta, cos_theta2;
-	//Área semiesfera de radi = 1.
-	double area = 2 * Pi; 
-	int r;
+	
+	double r = 1.0;
 	s = rand(0.0, 1.0);
 	t = rand(0.0, 1.0);
 
 	//Punt aleatori a la semiesfera.
-	double A = (1.0 - sqrt(s)) * 1 / Pi;
-	double B = (sqrt(s)*(1 - t)) * 1 / Pi;
-	double C = (t*sqrt(s)) * 1 / Pi;
+	double x = sqrt(t)*cos(2 * Pi*s);
+	double y = sqrt(t)*sin(2 * Pi*s);
+	double z = sqrt(r*r-x*x-y*y);
 
 	//Obtenim un punt aleatori de la nostra esfera.
-	sample.P = Vec3( A, B, C);
+	sample.P = Vec3( x, y, z);
 
-	Vec3 center = Vec3(0, 0, 0);
-	Vec3 SV = Unit((N - sample.P));
-	//Vec3 N = -N_point;
-	//cos_theta = fabs(N * Unit(P - sample.P));
-	cos_theta = fabs(N.x * SV.x + N.y * SV.y + N.z * SV.z);
-	cos_theta2 = fabs(N*Unit(N - sample.P));
-	// Calcule the distance between the sample and the point P
-	d = Length(N - sample.P);
 	// Assigns the weight
-	sample.w = area*((cos_theta2)) / (d * d);
-	sample.w = sample.w > 2 * Pi ? 2 * Pi : sample.w;
+	sample.w = Pi;
 
 	return sample;
 }
 
 // Returns a sample into the specular lobe. This is a type of importance sampling
 Sample Raytracer::SampleSpecularLobe( const Vec3 &R, float phong_exp ){
+	double s, t;
 	Sample sample;
+
+	double r = 1.0;
+	s = rand(0.0, 1.0);
+	t = rand(0.0, 1.0);
+
+	//Punt aleatori a la semiesfera.
+	double x = sqrt(pow(t, 2 / (phong_exp + 1)))* cos(2 * Pi*s);
+	double y = sqrt(pow(t, 2 / (phong_exp + 1)))* sin(2 * Pi*s);
+	double z = sqrt(r*r - x*x - y*y);
+
+	//Obtenim un punt aleatori de la nostra esfera.
+	sample.P = Vec3(x, y, z);
+
+	// Assigns the weight
+	sample.w = Pi;
 
 	return sample;
 }
@@ -210,6 +213,7 @@ Color Raytracer::Shade(const HitInfo &hit, const Scene &scene, int max_tree_dept
 	Ray ray;
 	Color diffuse = Color(0,0,0), specular = Color(0,0,0);
 	Color direct = Color(0,0,0), indirect = Color(0,0,0);
+	Color indirect_hemisphere = Color(0, 0, 0), indirect_lobe = Color(0, 0, 0);
 	Sample lightPoint;
 	double hv;
 	double nl;
@@ -272,14 +276,18 @@ Color Raytracer::Shade(const HitInfo &hit, const Scene &scene, int max_tree_dept
 			float phong_exp = hit.material.m_Phong_exp;
 
 			Sample sample_hemisphere = SampleProjectedHemisphere(N);
+			Sample specular_sample = SampleSpecularLobe(R, phong_exp);
 
 			if (hit.material.m_Reflectivity > 0) {
-				ray.direction = Reflection(-sample_hemisphere.P, hit.geom.normal);
-				indirect = Trace(ray, scene, max_tree_depth)*hit.material.m_Reflectivity;
 
+				ray.direction = sample_hemisphere.P;
+				indirect_hemisphere += Trace(ray, scene, max_tree_depth);
+
+				ray.direction = specular_sample.P;
+				indirect_lobe += Trace(ray, scene, max_tree_depth);
+
+				indirect = indirect_hemisphere + indirect_lobe;
 			}
-
-			Sample specular_sample = SampleSpecularLobe(R, phong_exp);
 
 			return direct + (scene.ambient * hit.material.m_Diffuse) + indirect;
 		}
