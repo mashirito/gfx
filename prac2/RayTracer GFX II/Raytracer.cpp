@@ -11,7 +11,7 @@
 *                                                                          *
 ***************************************************************************/
 
-static const int tree_depth = 1;		// Number of recursions to compute indirect illumination
+static const int tree_depth = 10;		// Number of recursions to compute indirect illumination
 
 
 #include "Raytracer.h"
@@ -142,41 +142,56 @@ int Raytracer::Cast( const Ray &ray, const Scene &scene, HitInfo &hitinfo, Objec
 // of the surface, and the surface material are all recorded in the
 // HitInfo structure.  The shader will typically make calls to Trace
 // to handle shadows and reflections.
-Color Raytracer::Shade( const HitInfo &hit, const Scene &scene, int max_tree_depth )
+Color Raytracer::Shade(const HitInfo &hit, const Scene &scene, int max_tree_depth)
 {
-	Color color;
+	Color color = { 0.0f, 0.0f, 0.0f };
 	Vec3 point = hit.geom.point + hit.geom.normal*Epsilon;
 	HitInfo hitObstacle = hit;
+	Color diffuse, specular;
+	Color direct, indirect;
+	Ray ray;
+	Vec3 V;
 
-	for (int i = 0; i < scene.num_lights; i++) {
+	if (max_tree_depth > 0) {
+		for (int i = 0; i < scene.num_lights; i++) {
 
-		Ray ray;
-		Color diffuse, specular;
-		Color direct, indirect;
-		Vec3 V;
+			
+			//if (Cast(ray, scene, hitObstacle)) {
+			//Creamos un rayo entre el origen y el destino.
+			ray.origin = point;
+			ray.direction = Unit(scene.light[i].m_Position - point);
+			//Si no hay intersección entre el rayo y alguna geometría en la escena.
+			hitObstacle.geom.distance = dist(scene.light[i].m_Position, point);
+			if (!Cast(ray, scene, hitObstacle)) {
+				//Calculamos la componente directa
+				V = Unit(hit.geom.origin - point);
+				Vec3 H = Unit(V + ray.direction);
 
-		//Creamos un rayo entre el origen y el destino.
-		ray.origin = point;
-		ray.direction = Unit(scene.light[i].m_Position - point);
-		//Si no hay intersección entre el rayo y alguna geometría en la escena.
-		hitObstacle.geom.distance = dist(scene.light[i].m_Position ,point);
-		if (!Cast(ray, scene, hitObstacle)) {
-			//Calculamos la componente directa
-			V = Unit(hit.geom.origin - point);
-			Vec3 H = Unit(V + ray.direction);
 
-			diffuse = (hit.geom.normal*ray.direction)*hit.material.m_Diffuse*scene.light[i].m_Color;
-			specular = pow((H*V), hit.material.m_Phong_exp)*hit.material.m_Specular*scene.light[i].m_Color;
+				diffuse = (hit.geom.normal*ray.direction)*hit.material.m_Diffuse*scene.light[i].m_Color;
+				specular = (pow((H*V), hit.material.m_Phong_exp))*hit.material.m_Specular*scene.light[i].m_Color;
 
-			direct = specular + diffuse;
-			//Si el material és reflectante
-			if (hit.material.m_Reflectivity > 0) {
-				ray.direction = Reflection(-V, hit.geom.normal);
-				indirect = Trace(ray, scene, max_tree_depth);
-				
+				direct += (specular + diffuse);
+
 			}
+			//Si el material és reflectante
+
+			/*if (hit.material.m_Opacity >= 0 && hit.material.m_Opacity < 1) {
+			ray.direction = Refraction(-V, hit.geom.normal, hit.material.m_RefractiveIndex);
+			color += Trace(ray, scene, max_tree_depth)*((1 - hit.material.m_Opacity)*hit.material.m_RefractiveIndex);
+			}*/
+			//color += direct*(1-hit.material.m_Reflectivity) + indirect*((hit.material.m_Opacity*hit.material.m_Reflectivity) + ((1 - hit.material.m_Opacity)*hit.material.m_RefractiveIndex));
 		}
-		color = direct*(1 - hit.material.m_Reflectivity) + indirect*hit.material.m_Reflectivity;
+
+		if (hit.material.m_Reflectivity > 0) {
+			ray.direction = Reflection(-V, hit.geom.normal);
+			indirect = Trace(ray, scene, max_tree_depth)*hit.material.m_Reflectivity;
+
+		}
+		color += direct*(1 - hit.material.m_Reflectivity) + indirect*hit.material.m_Reflectivity;
+
 	}
+
 	return color;
+
 }
