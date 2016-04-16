@@ -169,8 +169,8 @@ Sample Raytracer::SampleProjectedHemisphere(const Vec3 &N) {
 	double y = sqrt(t)*sin(2 * Pi*s);
 	double z = sqrt(r*r-x*x-y*y);
 
-	//Obtenim un punt aleatori de la nostra esfera.
-	sample.P = Vec3( x, y, z);
+	Vec3 reflected_sample = Vec3(x, y, z);
+	sample.P = Reflection(-reflected_sample, Vec3(0,0,1) + N);
 
 	// Assigns the weight
 	sample.w = Pi;
@@ -192,8 +192,8 @@ Sample Raytracer::SampleSpecularLobe( const Vec3 &R, float phong_exp ){
 	double y = sqrt(pow(t, 2 / (phong_exp + 1)))* sin(2 * Pi*s);
 	double z = sqrt(r*r - x*x - y*y);
 
-	//Obtenim un punt aleatori de la nostra esfera.
-	sample.P = Vec3(x, y, z);
+	Vec3 reflected_sample = Vec3(x, y, z);
+	sample.P = Reflection(-reflected_sample, Vec3(0, 0, 1) + R);
 
 	// Assigns the weight
 	sample.w = Pi;
@@ -269,27 +269,33 @@ Color Raytracer::Shade(const HitInfo &hit, const Scene &scene, int max_tree_dept
 					
 				}
 			} //fiper
+			Ray ray2;
+			ray2.origin = point;
 
 			Vec3 N = (hit.geom.normal);
 			Vec3 L = Unit(ray.direction);
 			Vec3 R = Unit(Reflection(-L, N));
 			float phong_exp = hit.material.m_Phong_exp;
 
+			
 			Sample sample_hemisphere = SampleProjectedHemisphere(N);
 			Sample specular_sample = SampleSpecularLobe(R, phong_exp);
 
-			if (hit.material.m_Reflectivity > 0) {
+			if (hit.material.m_Phong_exp > 0) {
 
-				ray.direction = sample_hemisphere.P;
-				indirect_hemisphere += Trace(ray, scene, max_tree_depth);
+				
 
-				ray.direction = specular_sample.P;
-				indirect_lobe += Trace(ray, scene, max_tree_depth);
+				ray2.direction = sample_hemisphere.P;
+				ray2.no_emitters = true;
+				indirect_hemisphere = Trace(ray2, scene, max_tree_depth)*hit.material.m_Diffuse;
+
+				ray2.direction = specular_sample.P;
+				indirect_lobe = Trace(ray2, scene, max_tree_depth)*hit.material.m_Specular;
 
 				indirect = indirect_hemisphere + indirect_lobe;
 			}
 
-			return direct + (scene.ambient * hit.material.m_Diffuse) + indirect;
+			return direct + indirect;
 		}
 		
 	//}
