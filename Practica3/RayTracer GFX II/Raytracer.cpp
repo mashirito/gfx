@@ -1,4 +1,5 @@
 #include <math.h>
+#include <algorithm>
 /***************************************************************************
 *                                                                          *
 * This is the source file for a ray tracer. It defines most of the		   *
@@ -12,7 +13,7 @@
 ***************************************************************************/
 
 static const int tree_depth = 3;		// Number of recursions to compute indirect illumination
-static const int rays_pixel = 10;
+static const int rays_pixel = 3;
 
 #include "Raytracer.h"
 
@@ -159,7 +160,7 @@ Sample Raytracer::SampleProjectedHemisphere(const Vec3 &N) {
 
 	double s, t;
 	Sample sample;
-	
+
 	double r = 1.0;
 	s = rand(0.0, 1.0);
 	t = rand(0.0, 1.0);
@@ -167,10 +168,11 @@ Sample Raytracer::SampleProjectedHemisphere(const Vec3 &N) {
 	//Punt aleatori a la semiesfera.
 	double x = sqrt(t)*cos(2 * Pi*s);
 	double y = sqrt(t)*sin(2 * Pi*s);
-	double z = sqrt(r*r-x*x-y*y);
+	double z = sqrt(1 - x*x - y*y);
 
+	//Obtenim un punt aleatori de la nostra esfera.
 	Vec3 reflected_sample = Vec3(x, y, z);
-	sample.P = Reflection(-reflected_sample, Vec3(0,0,1) + N);
+	sample.P = (Reflection(-reflected_sample, Unit( N + Vec3(0, 0, 1))));
 
 	// Assigns the weight
 	sample.w = Pi;
@@ -179,7 +181,7 @@ Sample Raytracer::SampleProjectedHemisphere(const Vec3 &N) {
 }
 
 // Returns a sample into the specular lobe. This is a type of importance sampling
-Sample Raytracer::SampleSpecularLobe( const Vec3 &R, float phong_exp ){
+Sample Raytracer::SampleSpecularLobe(const Vec3 &R, float phong_exp) {
 	double s, t;
 	Sample sample;
 
@@ -188,18 +190,22 @@ Sample Raytracer::SampleSpecularLobe( const Vec3 &R, float phong_exp ){
 	t = rand(0.0, 1.0);
 
 	//Punt aleatori a la semiesfera.
-	double x = sqrt(pow(t, 2 / (phong_exp + 1)))* cos(2 * Pi*s);
-	double y = sqrt(pow(t, 2 / (phong_exp + 1)))* sin(2 * Pi*s);
-	double z = sqrt(r*r - x*x - y*y);
+	double x = sqrt(1 - pow(t, 2 / (phong_exp + 1)))* cos(2 * Pi*s);
+	double y = sqrt(1 - pow(t, 2 / (phong_exp + 1)))* sin(2 * Pi*s);
+	double z = sqrt(1 - x*x - y*y);
 
+	//Obtenim un punt aleatori de la nostra esfera.
 	Vec3 reflected_sample = Vec3(x, y, z);
-	sample.P = Reflection(-reflected_sample, Vec3(0, 0, 1) + R);
+	sample.P = (Reflection(-reflected_sample , Unit(R + Vec3(0,0,1))));
 
 	// Assigns the weight
 	sample.w = Pi;
 
 	return sample;
 }
+
+
+
 // Shade assigns a color to a point on a surface, as it is seen
 // from another point.  The coordinates of these points, the normal
 // of the surface, and the surface material are all recorded in the
@@ -210,96 +216,114 @@ Color Raytracer::Shade(const HitInfo &hit, const Scene &scene, int max_tree_dept
 	Color color = { 0.0f, 0.0f, 0.0f };
 	Vec3 point = hit.geom.point + hit.geom.normal*Epsilon;
 	HitInfo hitObstacle = hit;
-	Ray ray;
+	Ray ray, ray2;
 	Color diffuse = Color(0,0,0), specular = Color(0,0,0);
 	Color direct = Color(0,0,0), indirect = Color(0,0,0);
-	Color indirect_hemisphere = Color(0, 0, 0), indirect_lobe = Color(0, 0, 0);
 	Sample lightPoint;
-	double hv;
-	double nl;
+
 	Vec3 V;
 	Color irradiant = Color(0,0,0);
 	int espec = 0;
+	Color indirect_hemisphere = Color(0, 0, 0), indirect_lobe = Color(0, 0, 0);
 
 	//if (max_tree_depth >= 0) {
 
-		if (hit.material.m_Emission.red > 0.0 || hit.material.m_Emission.blue > 0.0 || hit.material.m_Emission.green > 0.0) {
+		if (hit.material.Emitter()) {
 			return hit.material.m_Diffuse;
 		}else{
-
 			for (Object *object = scene.first; object != NULL; object = object->next)
 			{
-			
+
 				if (object->material.Emitter() == true)
 				{
-					lightPoint = object->GetSample(hitObstacle.geom.point, hit.geom.normal);
-					ray.origin = point;
-					
+					lightPoint = object->GetSample(hit.geom.point, hit.geom.normal);
+					ray.origin = hit.geom.point;
+
 					//lightPoint.P = lightPoint.P + hit.geom.normal*Epsilon;
-					ray.direction = Unit(lightPoint.P - point);
-					hitObstacle.geom.distance = (Length(lightPoint.P - hit.geom.point));
-					
-					
-					if (!Cast(ray, scene, hitObstacle)) {
-						//V = Unit(hit.geom.origin - point);
+					ray.direction = Unit(lightPoint.P - hit.geom.point);
+					hitObstacle.geom.distance = Length(lightPoint.P - point);
+
+					V = Unit(hit.geom.origin - hit.geom.point);
 						Vec3 N = (hit.geom.normal);
-						V = Unit(hit.geom.origin - point);
-						Vec3 L = Unit(ray.direction);// -Unit(point - lightPoint.P);
+						Vec3 H = Unit(V + ray.direction);
+						//V = Unit(hit.geom.origin - hit.geom.point);
+						Vec3 L = (-ray.direction);// Unit(point - lightPoint.P);
 						Vec3 R = Unit(Reflection(-L, N));//Unit((2*N*(N*L))-L);
+
+					espec = hit.material.m_Phong_exp;
+
+					double c = (L*H);
+					double g = sqrt((pow(1.4 / 1, 2.0))+ pow(c,2)-1);
+					Color f0 = hit.material.m_Specular;
+
+
+					double F = (f0.red + (1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)), f0.green + (1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)), f0.blue+(1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)));
+					//double F = (1 / 2)*((pow(g - c, 2))/(pow(g + c, 2)))*(1+pow((c*(g+c)-1),2)/ (1 + pow((c*(g - c) + 1), 2)));
+					double D = ((espec + 2) / (2 * Pi))*(pow((H*N), espec));
+					//double D = 1/(sqrt(2*Pi))
+					double G = min(min(1.0, (2 * (N*H)*(N*V)) / (V*H)), (2 * (N*H)*(N*L)) / (L*H));
+					if (G < 0) G = 0;
+					if (D < 0) D = 0;
+					if (F < 0) F = 0;
+
+					if (!Cast(ray, scene, hitObstacle)) {
+						
 
 						if (N * L > 0) {
 							diffuse = (N*L)*hit.material.m_Diffuse/Pi;
 						}
 						else {
-							diffuse = Color(0.0,0.0,0.0);
+							diffuse = Color(0.0, 0.0, 0.0);
 						}
-						
-					
-						espec = hit.material.m_Phong_exp;
 
 						irradiant = object->material.m_Emission*(lightPoint.w);
-						if ((R*V) > 0 && hit.material.m_Phong_exp > 0){
-							specular = pow((R*V), espec)*hit.material.m_Specular;
+						
+						if ((R*V) > 0 && hit.material.m_Phong_exp > 0) {
+							specular = /*(espec + 2)/(2*Pi) * pow((R*V), espec)*/(F*D*G / (4 * (N*L)*(N*V)))*hit.material.m_Specular;
 						}
 						else {
 							specular = Color(0.0, 0.0, 0.0);
 						}
 						direct += (diffuse + specular)*irradiant;
 					}
-					
 				}
-			} //fiper
-			Ray ray2;
-			ray2.origin = point;
-
-			Vec3 N = (hit.geom.normal);
-			Vec3 L = Unit(ray.direction);
-			Vec3 R = Unit(Reflection(-L, N));
-			float phong_exp = hit.material.m_Phong_exp;
-
-			
-			Sample sample_hemisphere = SampleProjectedHemisphere(N);
-			Sample specular_sample = SampleSpecularLobe(R, phong_exp);
-
-			if (hit.material.m_Phong_exp > 0) {
-
-				
-
-				ray2.direction = sample_hemisphere.P;
-				ray2.no_emitters = true;
-				indirect_hemisphere = Trace(ray2, scene, max_tree_depth)*hit.material.m_Diffuse;
-
-				ray2.direction = specular_sample.P;
-				indirect_lobe = Trace(ray2, scene, max_tree_depth)*hit.material.m_Specular;
-
-				indirect = indirect_hemisphere + indirect_lobe;
 			}
+			if (hit.material.m_Phong_exp > 0) {
+				Vec3 N = (hit.geom.normal);
+				Vec3 L = Unit(-ray.direction);
+				V = -Unit(hit.geom.point - hit.geom.origin);
+				Vec3 R = Unit(Reflection(-V, N));
+				Vec3 H = Unit(V + ray.direction);
+				double c = (L*H);
+				double g = sqrt((pow(1.4 / 1, 2.0)) + pow(c, 2) - 1);
+				Color f0 = hit.material.m_Specular;
 
-			return direct + indirect;
+				double F = (f0.red + (1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)), f0.green + (1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)), f0.blue + (1.0 - f0.red, 1.0 - f0.green, 1.0 - f0.blue)*(pow((1 - (N*V)), 5)));
+				//double F = (1 / 2)*((pow(g - c, 2))/(pow(g + c, 2)))*(1+pow((c*(g+c)-1),2)/ (1 + pow((c*(g - c) + 1), 2)));
+				double D = ((espec + 2) / (2 * Pi))*(pow((H*N), espec));
+				double G = min(min(1.0, (2 * (N*H)*(N*V)) / (V*H)), (2 * (N*H)*(N*L)) / (L*H));
+				if (G < 0) G = 0;
+				if (D < 0) D = 0;
+				if (F < 0) F = 0;
+
+
+				float phong_exp = hit.material.m_Phong_exp;
+				ray2.origin = point;
+
+				Sample sample_hemisphere = SampleProjectedHemisphere(N);
+				ray2.direction = Unit(sample_hemisphere.P);
+				//ray2.no_emitters = true;
+				indirect_hemisphere = Trace(ray2, scene, max_tree_depth-1)*  hit.material.m_Diffuse;
+
+				Sample specular_sample = SampleSpecularLobe(R, phong_exp);
+				ray2.direction = Unit(specular_sample.P);
+				indirect_lobe = Trace(ray2, scene, max_tree_depth - 1)*F*D*G / (4 * (N*L)*(N*V));// *hit.material.m_Specular;
+
+				indirect = indirect_hemisphere + indirect_lobe;// *(F*D*G / (4 * (N*L)*(N*V)));
+			}
+			
+			return (direct) + indirect;
 		}
-		
 	//}
-		
-	
 }
 

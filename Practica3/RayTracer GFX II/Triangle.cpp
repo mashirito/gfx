@@ -100,31 +100,93 @@ bool Triangle::Intersect( const Ray &ray, HitGeom &hitgeom ) const
 		Plane plane;
 		Vec3 aux;
 		double dist;
+		Vec3 punt;
 
 		plane.A = N.x;
 		plane.B = N.y;
 		plane.C = N.z;
 		plane.D = d;
 
-		/*
-		M.m [0][0] = A.x;
-		M.m [0][1] = B.x;
-		M.m [0][2] = C.x;
-
-		M.m [1][0] = A.y;
-		M.m [1][1] = A.y;
-		M.m [1][2] = A.y;
-
-		M.m [2][0] = A.z;
-		M.m [2][1] = A.z;
-		M.m [2][2] = A.z;
-		*/
-		
 		dist = plane.Intersect(ray);
 
 		if (dist > 0.0 && dist < hitgeom.distance) {
 
-			Vec3 position = ray.origin + (ray.direction * dist);
+			float t = -(N*(ray.origin) + d) / (N*(ray.direction));
+
+			if (t > 0)
+			{
+				//Calculem el punt d'intersecció 
+				punt = ray.origin + ray.direction * t;
+
+
+				Mat3x3 matriu;
+				switch (axis)
+				{
+				case 0:
+					punt.x = 1;
+					matriu.m[0][0] = 1;
+					matriu.m[0][1] = 1;
+					matriu.m[0][2] = 1;
+					matriu.m[1][0] = A.y;
+					matriu.m[1][1] = B.y;
+					matriu.m[1][2] = C.y;
+					matriu.m[2][0] = A.z;
+					matriu.m[2][1] = B.z;
+					matriu.m[2][2] = C.z;
+
+					break;
+				case 1:
+					punt.y = 1;
+					matriu.m[0][0] = A.x;
+					matriu.m[0][1] = B.x;
+					matriu.m[0][2] = C.x;
+					matriu.m[1][0] = 1;
+					matriu.m[1][1] = 1;
+					matriu.m[1][2] = 1;
+					matriu.m[2][0] = A.z;
+					matriu.m[2][1] = B.z;
+					matriu.m[2][2] = C.z;
+					break;
+				case 2:
+					punt.z = 1;
+					matriu.m[0][0] = A.x;
+					matriu.m[0][1] = B.x;
+					matriu.m[0][2] = C.x;
+					matriu.m[1][0] = A.y;
+					matriu.m[1][1] = B.y;
+					matriu.m[1][2] = C.y;
+					matriu.m[2][0] = 1;
+					matriu.m[2][1] = 1;
+					matriu.m[2][2] = 1;
+					break;
+				}
+
+				const Mat3x3 m = Mat3x3(matriu);
+
+
+				Mat3x3 minv = (1 / det(m)) * Transpose(Adjoint(m));
+				Vec3 coordBaricentriques = minv * punt;
+
+				//Si les coordBaricentriques estan entre 0 i 1, omplim hitgeom
+				if ((coordBaricentriques.x > 0 && coordBaricentriques.x < 1) && (coordBaricentriques.y > 0 && coordBaricentriques.y < 1) && (coordBaricentriques.z > 0 && coordBaricentriques.z < 1)) {
+
+					hitgeom.distance = dist;
+					hitgeom.normal = N;
+					hitgeom.origin = ray.origin;
+					hitgeom.point = punt;
+
+					return true;
+				}
+
+			}
+
+
+
+		}
+
+		return false;
+}
+			/*Vec3 position = ray.origin + (ray.direction * dist);
 
 			double as_x = position.x - A.x;
 			double as_y = position.y - A.y;
@@ -139,11 +201,8 @@ bool Triangle::Intersect( const Ray &ray, HitGeom &hitgeom ) const
 			hitgeom.point = position;
 			hitgeom.normal = N;
 			hitgeom.origin = ray.origin;
+			*/
 
-			return true;
-		}
-		return false;
-	}
 
 Sample Triangle::GetSample( const Vec3 &P, const Vec3 &N_point ) const
 {
